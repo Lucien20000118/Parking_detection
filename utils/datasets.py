@@ -493,20 +493,20 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                             l = np.concatenate((classes.reshape(-1, 1), segments2boxes(segments)), 1)  # (cls, xywh)
                         l = np.array(l, dtype=np.float32)
                     if len(l):
-                        assert l.shape[1] == 6, 'labels require 6 columns each (including angle)'
+                        assert l.shape[1] == 7, 'labels require 6 columns each (including angle)'
                         assert (l >= 0).all(), 'negative labels'
                         assert (l[:, 1:] <= 1).all(), 'non-normalized or out of bounds coordinate labels'
                         assert np.unique(l, axis=0).shape[0] == l.shape[0], 'duplicate labels'
 
                         # Normalization angle
-                        l[:,5] = (l[:, 5] + np.pi) / (2 * np.pi)
+                        l[:,6] = (l[:, 6] + np.pi) / (2 * np.pi)
                     
                     else:
                         ne += 1  # label empty
-                        l = np.zeros((0, 6), dtype=np.float32)  # 6 columns: class, x, y, w, h, angle
+                        l = np.zeros((0, 7), dtype=np.float32)  # 7 columns: img_id, class, x, y, w, h, angle
                 else:
                     nm += 1  # label missing
-                    l = np.zeros((0, 6), dtype=np.float32)  # 6 columns: class, x, y, w, h, angle
+                    l = np.zeros((0, 7), dtype=np.float32)  # 7 columns: img_id, class, x, y, w, h, angle
 
                 x[im_file] = [l, shape, segments]
             except Exception as e:
@@ -575,19 +575,15 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 labels[:, 1:5] = xywhn2xyxy(xywh_labels, ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
                 labels[:, 5] = angles  # 将 angle 重新附加回标签
 
-
         if self.augment:
             # Augment imagespace
             if not mosaic:
                 img, labels = random_perspective(img, labels,
-                                                 degrees=hyp['degrees'],
-                                                 translate=hyp['translate'],
-                                                 scale=hyp['scale'],
-                                                 shear=hyp['shear'],
-                                                 perspective=hyp['perspective'])
-            
-            
-            #img, labels = self.albumentations(img, labels)
+                                                degrees=hyp['degrees'],
+                                                translate=hyp['translate'],
+                                                scale=hyp['scale'],
+                                                shear=hyp['shear'],
+                                                perspective=hyp['perspective'])
 
             # Augment colorspace
             augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
@@ -595,15 +591,15 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             # Apply cutouts
             # if random.random() < 0.9:
             #     labels = cutout(img, labels)
-            
+
             if random.random() < hyp['paste_in']:
-                sample_labels, sample_images, sample_masks = [], [], [] 
+                sample_labels, sample_images, sample_masks = [], [], []
                 while len(sample_labels) < 30:
                     sample_labels_, sample_images_, sample_masks_ = load_samples(self, random.randint(0, len(self.labels) - 1))
                     sample_labels += sample_labels_
                     sample_images += sample_images_
                     sample_masks += sample_masks_
-                    #print(len(sample_labels))
+                    print(len(sample_labels))
                     if len(sample_labels) == 0:
                         break
                 labels = pastein(img, labels, sample_labels, sample_images, sample_masks)
@@ -613,6 +609,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             labels[:, 1:5] = xyxy2xywh(labels[:, 1:5])  # convert xyxy to xywh
             labels[:, [2, 4]] /= img.shape[0]  # normalized height 0-1
             labels[:, [1, 3]] /= img.shape[1]  # normalized width 0-1
+
+            # 归一化 angle 到 [0, 1]，如果需要
+            labels[:, 5] = (labels[:, 5] + math.pi) / (2 * math.pi)
 
         if self.augment:
             # flip up-down
@@ -627,7 +626,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 if nL:
                     labels[:, 1] = 1 - labels[:, 1]
 
-        labels_out = torch.zeros((nL, 6))
+        labels_out = torch.zeros((nL, 7))
         if nL:
             labels_out[:, 1:] = torch.from_numpy(labels)
 
@@ -637,6 +636,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         return torch.from_numpy(img), labels_out, self.img_files[index], shapes
 
+
     @staticmethod
     def collate_fn(batch):
         img, label, path, shapes = zip(*batch)  # transposed
@@ -644,8 +644,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             l[:, 0] = i  # add target image index for build_targets()
          # Concatenate labels, including angle
         labels_out = torch.cat(label, 0)  # Combine all labels in batch
-        if labels_out.size(1) == 6:  # Check for angle column
-            labels_out[:, 5] = labels_out[:, 5] * (2 * np.pi) - np.pi  # Denormalize angle to [-π, π]
+        if labels_out.size(1) == 7:  # Check for angle column
+            labels_out[:, 6] = labels_out[:, 6] * (2 * np.pi) - np.pi  # Denormalize angle to [-π, π]
         return torch.stack(img, 0), labels_out, path, shapes
 
     @staticmethod
@@ -674,8 +674,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         # Concatenate all labels
         labels_out = torch.cat(label4, 0)
-        if labels_out.size(1) == 6:  # Check for angle column
-            labels_out[:, 5] = labels_out[:, 5] * (2 * np.pi) - np.pi  # Denormalize angle to [-π, π]
+        if labels_out.size(1) == 7:  # Check for angle column
+            labels_out[:, 6] = labels_out[:, 6] * (2 * np.pi) - np.pi  # Denormalize angle to [-π, π]
         
         return torch.stack(img4, 0), torch.cat(label4, 0), path4, shapes4
 
