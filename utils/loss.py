@@ -444,12 +444,16 @@ class ComputeLoss:
         #self.balance = {3: [4.0, 1.0, 0.4]}.get(det.nl, [4.0, 1.0, 0.5, 0.4, .1])  # P3-P7
         self.ssi = list(det.stride).index(16) if autobalance else 0  # stride 16 index
         self.BCEcls, self.BCEobj, self.gr, self.hyp, self.autobalance = BCEcls, BCEobj, model.gr, h, autobalance
+
+        # Angle loss
+        self.MSEangle = nn.MSELoss()  # Angle regression loss
+
         for k in 'na', 'nc', 'nl', 'anchors':
             setattr(self, k, getattr(det, k))
 
     def __call__(self, p, targets):  # predictions, targets, model
         device = targets.device
-        lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
+        lcls, lbox, lobj, langle = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
         tcls, tbox, indices, anchors = self.build_targets(p, targets)  # targets
 
         # Losses
@@ -467,6 +471,11 @@ class ComputeLoss:
                 pbox = torch.cat((pxy, pwh), 1)  # predicted box
                 iou = bbox_iou(pbox.T, tbox[i], x1y1x2y2=False, CIoU=True)  # iou(prediction, target)
                 lbox += (1.0 - iou).mean()  # iou loss
+
+                # Angle regression loss
+                pangle = ps[:, 6]  # Predicted angle
+                tangle = targets[b, 6]  # Target angle
+                langle += self.MSEangle(pangle, tangle)  # Angle loss
 
                 # Objectness
                 tobj[b, a, gj, gi] = (1.0 - self.gr) + self.gr * iou.detach().clamp(0).type(tobj.dtype)  # iou ratio
@@ -492,10 +501,11 @@ class ComputeLoss:
         lbox *= self.hyp['box']
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
-        bs = tobj.shape[0]  # batch size
+        langle *= self.hyp.get('angle', 1.0)  # Scale angle loss by a weight factor
 
-        loss = lbox + lobj + lcls
-        return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
+        bs = tobj.shape[0]  # batch size
+        loss = lbox + lobj + lcls + langle  # Total loss
+        return loss * bs, torch.cat((lbox, lobj, lcls, langle, loss)).detach()
 
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
