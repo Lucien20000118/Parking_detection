@@ -493,16 +493,21 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                             l = np.concatenate((classes.reshape(-1, 1), segments2boxes(segments)), 1)  # (cls, xywh)
                         l = np.array(l, dtype=np.float32)
                     if len(l):
-                        assert l.shape[1] == 5, 'labels require 5 columns each'
+                        assert l.shape[1] == 6, 'labels require 6 columns each (including angle)'
                         assert (l >= 0).all(), 'negative labels'
                         assert (l[:, 1:] <= 1).all(), 'non-normalized or out of bounds coordinate labels'
                         assert np.unique(l, axis=0).shape[0] == l.shape[0], 'duplicate labels'
+
+                        # Normalization angle
+                        l[:,5] = (l[:, 5] + np.pi) / (2 * np.pi)
+                    
                     else:
                         ne += 1  # label empty
-                        l = np.zeros((0, 5), dtype=np.float32)
+                        l = np.zeros((0, 6), dtype=np.float32)  # 6 columns: class, x, y, w, h, angle
                 else:
                     nm += 1  # label missing
-                    l = np.zeros((0, 5), dtype=np.float32)
+                    l = np.zeros((0, 6), dtype=np.float32)  # 6 columns: class, x, y, w, h, angle
+
                 x[im_file] = [l, shape, segments]
             except Exception as e:
                 nc += 1
@@ -565,7 +570,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
             labels = self.labels[index].copy()
             if labels.size:  # normalized xywh to pixel xyxy format
-                labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
+                xywh_labels = labels[:, 1:5]
+                angles = labels[:, 5]  # 保留 angle 列
+                labels[:, 1:5] = xywhn2xyxy(xywh_labels, ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
+                labels[:, 5] = angles  # 将 angle 重新附加回标签
+
 
         if self.augment:
             # Augment imagespace
