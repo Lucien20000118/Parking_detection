@@ -642,7 +642,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         img, label, path, shapes = zip(*batch)  # transposed
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
-        return torch.stack(img, 0), torch.cat(label, 0), path, shapes
+         # Concatenate labels, including angle
+        labels_out = torch.cat(label, 0)  # Combine all labels in batch
+        if labels_out.size(1) == 6:  # Check for angle column
+            labels_out[:, 5] = labels_out[:, 5] * (2 * np.pi) - np.pi  # Denormalize angle to [-π, π]
+        return torch.stack(img, 0), labels_out, path, shapes
 
     @staticmethod
     def collate_fn4(batch):
@@ -668,6 +672,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         for i, l in enumerate(label4):
             l[:, 0] = i  # add target image index for build_targets()
 
+        # Concatenate all labels
+        labels_out = torch.cat(label4, 0)
+        if labels_out.size(1) == 6:  # Check for angle column
+            labels_out[:, 5] = labels_out[:, 5] * (2 * np.pi) - np.pi  # Denormalize angle to [-π, π]
+        
         return torch.stack(img4, 0), torch.cat(label4, 0), path4, shapes4
 
 
