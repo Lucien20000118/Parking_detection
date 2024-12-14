@@ -89,7 +89,7 @@ def main():
     # YOLOv7 Training Command
     yolo_train_command = (
         "python train.py --workers 8 --device 0 --batch-size 32 --data data/parking.yaml "
-        "--img 640 --cfg cfg/yolov7-custom.cfg --weights yolov7_training.pt --name yolov7-custom --hyp data/hyp.scratch.custom.yaml"
+        "--img 640 --cfg cfg/yolov7-custom.cfg --weights yolov7_training.pt --name yolov7-parking --hyp data/hyp.scratch.custom.yaml"
     )
     print("Run the following command to start YOLOv7 training:")
     print(yolo_train_command)
